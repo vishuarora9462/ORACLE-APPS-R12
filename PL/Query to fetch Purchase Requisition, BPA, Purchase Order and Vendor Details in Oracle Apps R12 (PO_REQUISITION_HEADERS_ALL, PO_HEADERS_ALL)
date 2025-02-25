@@ -1,0 +1,113 @@
+SELECT hou.name ou_name,
+        prh.segment1 requisition_num,
+        prh.creation_date, 
+        prh.created_by,
+        poh.agent_id, 
+        poh.po_header_id,
+        poh.segment1 po_num,
+        ppx.full_name Requestor_Name,
+        prh.description Req_Description,
+        auth_status.displayed_field authorization_status,       
+        prh.org_id,       
+        prh.note_to_authorizer,
+        req_type.displayed_field type_lookup_code,        
+        prl.catalog_type,
+        prl.blanket_po_header_id,
+        prl.blanket_po_line_num,                       
+        prl.catalog_type,
+        prl.line_num,
+        plt.order_type_lookup_code,
+        prl.item_description,
+        prl.unit_meas_lookup_code,
+        prl.unit_price,
+        COALESCE(prd.req_line_quantity,prl.quantity) quantity,
+        (prl.unit_price * COALESCE(prd.req_line_quantity,
+                                   prl.quantity
+                                   )
+        ) line_amount,                                                       
+        prl.quantity_delivered,
+        prl.need_by_date,
+        prl.note_to_agent,
+        prl.currency_code,
+        prl.rate_type,
+        prl.rate_date,
+        prl.quantity_cancelled,
+        prl.cancel_date,
+        pla.cancel_reason,
+        glcc.concatenated_segments charge_account,
+        aps.vendor_id,         
+        aps.vendor_name,
+        aps.segment1 vendor_number,
+        assa.vendor_site_code,
+        plc.displayed_field po_status,
+        hr.location_code deliver_to_location,
+        prl.urgent_flag,        
+       (SELECT segment1 
+          FROM po_headers_all pha
+         WHERE pha.po_header_id = prl.blanket_po_header_id
+       ) bpa_number,    
+       (SELECT (CASE
+                WHEN SYSDATE BETWEEN pha.start_date 
+                             AND NVL(pha.end_date,SYSDATE+1)
+                THEN 'ACTIVE'
+                ELSE 'INACTIVE'
+                END
+               ) 
+          FROM po_headers_all pha
+         WHERE pha.po_header_id = prl.blanket_po_header_id
+       ) bpa_status,
+       prl.blanket_po_line_num,
+       (SELECT (CASE
+                WHEN NVL((pl.expiration_date), (SYSDATE)) >= (SYSDATE)
+                THEN 'ACTIVE'
+                ELSE 'INACTIVE'
+                END
+               ) 
+          FROM po_lines_all pl
+         WHERE pl.po_header_id = prl.blanket_po_header_id
+           AND pl.line_num = prl.blanket_po_line_num
+       ) bpa_line_status,   
+       prl.suggested_vendor_product_code vendor_item_number,    
+       prl.rate_date exchange_rate_date,
+       prl.rate exchange_rate,
+       prl.currency_unit_price      
+  FROM po_requisition_headers_all prh,
+       hr_all_organization_units hou,
+       hr_organization_information  hoi, 
+       po_requisition_lines_all   prl,
+       po_req_distributions_all   prd,
+       gl_code_combinations_kfv  glcc,
+       per_people_x               ppx,
+       po_headers_all             poh,
+       po_lines_all               pla,
+       ap_suppliers               aps,
+       ap_supplier_sites_all      assa,
+       po_distributions_all       pda,
+       hr_locations               hr,
+       po_lookup_codes            plc,
+       po_lookup_codes            auth_status,
+       po_lookup_codes            req_type,
+       po_line_types              plt  
+ WHERE prh.requisition_header_id = prl.requisition_header_id
+   AND hou.organization_id       = prh.org_id
+   AND hou.organization_id       = hoi.organization_id 
+   AND hoi.org_information_context = 'Operating Unit Information' 
+   AND ppx.person_id             = prh.preparer_id
+   AND prh.type_lookup_code      = 'PURCHASE'
+   AND prd.requisition_line_id   = prl.requisition_line_id
+   AND pda.req_distribution_id   = prd.distribution_id
+   AND glcc.code_combination_id  = prd.code_combination_id
+   AND pda.po_line_id            = pla.po_line_id
+   AND pla.po_header_id          = poh.po_header_id
+   AND pda.po_header_id          = poh.po_header_id
+   AND pda.deliver_to_location_id = hr.location_id
+   AND poh.vendor_id             = aps.vendor_id
+   AND poh.vendor_site_id        = assa.vendor_site_id
+   AND aps.vendor_id             = assa.vendor_id
+   AND prl.line_type_id          = plt.line_type_id 
+   AND plc.lookup_type           = 'DOCUMENT STATE'
+   AND plc.lookup_code           = poh.closed_code
+   AND auth_status.lookup_type   = 'AUTHORIZATION STATUS'
+   AND auth_status.lookup_code   = prh.authorization_status
+   AND req_type.lookup_type      = 'REQUISITION TYPE'
+   AND req_type.lookup_code      = prh.type_lookup_code
