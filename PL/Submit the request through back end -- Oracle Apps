@@ -1,0 +1,78 @@
+--Submit the request through back end -- Oracle Apps
+BEGIN
+   fnd_file.put_line (fnd_file.output,
+                      ‘*** Call The XXXX Import Program  ***’);
+   fnd_global.apps_initialize (
+      user_id             => fnd_profile.VALUE (‘USER_ID’),
+      resp_id             => fnd_profile.VALUE (‘RESP_ID’),
+      resp_appl_id        => fnd_profile.VALUE (‘RESP_APPL_ID’),
+      security_group_id   => 0);
+   fnd_file.put_line (fnd_file.LOG, ‘Batch ID:’ || ln_group_id);
+   ln_req_id :=
+
+      fnd_request.submit_request (‘XX’,  – Application short name
+                                  ‘XXXX’, — conc program short name
+                                  NULL,
+                                  SYSDATE,
+                                  FALSE,
+                                  ‘BATCH’,
+                                  ln_group_id);
+   COMMIT;
+
+   IF ln_req_id = 0
+   THEN
+      fnd_file.put_line (
+         fnd_file.LOG,
+         ’Request Not Submitted due to “‘ || fnd_message.get || ‘”.’);
+   ELSE
+      fnd_file.put_line (
+         fnd_file.LOG,
+         ’The XXXX Import Program submitted – Request id :’ || ln_req_id);
+   END IF;
+
+   IF ln_req_id > 0
+   THEN
+      LOOP
+         lv_req_return_status :=
+            fnd_concurrent.wait_for_request (ln_req_id,
+                                             60,
+                                             0,
+                                             lv_req_phase,
+                                             lv_req_status,
+                                             lv_req_dev_phase,
+                                             lv_req_dev_status,
+                                             lv_req_message);
+         EXIT WHEN UPPER (lv_req_phase) = ‘COMPLETED’
+                   OR UPPER (lv_req_status) IN
+                         (‘CANCELLED’, ‘ERROR’, ‘TERMINATED’);
+      END LOOP;
+
+      IF UPPER (lv_req_phase) = ‘COMPLETED’
+         AND UPPER (lv_req_status) = ‘ERROR’
+      THEN
+         fnd_file.put_line (
+            fnd_file.LOG,
+            ‘The XXXX Import program completed in error. Oracle request id’);
+         fnd_file.put_line (fnd_file.LOG, SQLERRM);
+      ELSIF UPPER (lv_req_phase) = ‘COMPLETED’
+            AND UPPER (lv_req_status) = ‘NORMAL’
+      THEN
+         Fnd_File.PUT_LINE (
+            Fnd_File.LOG,
+            ‘The XXXX Import program request successful for request id: ‘
+            || ln_req_id);
+      ELSE
+         Fnd_File.PUT_LINE (
+            Fnd_File.LOG,
+            ‘The XXXX Import Program request failed. Oracle request id ‘);
+         Fnd_File.PUT_LINE (Fnd_File.LOG, SQLERRM);
+      END IF;
+   END IF;
+EXCEPTION
+   WHEN OTHERS
+   THEN
+      fnd_file.put_line (
+         fnd_file.LOG,
+         ’OTHERS exception while submitting The XXXX Import Program: ‘
+         || SQLERRM);
+END;
