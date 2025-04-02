@@ -1,0 +1,639 @@
+CREATE OR REPLACE PACKAGE BODY APPS.xxmssl_ap_aging_dist_main
+IS
+   PROCEDURE main (errbuf OUT VARCHAR2, retcode OUT VARCHAR2, p_as_on_date VARCHAR2)
+   IS
+      CURSOR cur_ou
+      IS
+         SELECT ORGANIZATION_ID, SET_OF_BOOKS_ID 
+         FROM hr_operating_units --WHERE ORGANIZATION_ID IN (101)--(815,84)
+         ;
+      --Comented by Moaz on 06-Dec-24 to dump data of all columns used in report
+      /*CURSOR cur_standard (p_ledger_id NUMBER, p_org_id NUMBER, p_as_on_date DATE, p_request_id NUMBER) 
+      IS
+           SELECT invoice_type_col,unit,party_id,party_name,
+            xxmssl_gst_info_pkg.xxmssl_gstin_no (org_id,vendor_id,vendor_site_id) vendor_gstin,
+            xxmssl_receipt_no (invoice_id) receipt_num,
+            site_name,site_purpose,invoice_id,org_id,supplier_inv_no,curr,
+            voucher_date,voucher_no,type,inv_type,inv_date,
+            xxmssl_ap_aging_dataset_dist.cf_supp_s_inv_value1_for_sum(attribute15) supplier_inv_value,
+            exchange_rate,inv_amt_forex,inv_amt_base,credit_term,
+            xxmssl_ap_aging_dataset_dist.get_due_date (invoice_id, org_id) due_date,
+            xxmssl_ap_aging_dataset_dist.get_hold_name(invoice_id) hold_name,
+            xxmssl_ap_aging_dataset_dist.get_hold_reason(invoice_id) hold_reason,
+            xxmssl_ap_aging_dataset_dist.get_hold_amout(invoice_id) hold_amout,
+            xxmssl_ap_aging_dataset_dist.get_boe (invoice_id) boe,
+            code_combination,
+            xxmssl_ap_aging_dataset_dist.get_aprovl_status(invoice_id,invoice_amount,payment_status_flag,type) invoice_status,
+            approval_status,
+            DECODE((ap_invoices_pkg.get_posting_status (invoice_id)),'N', 'No','Y', 'Yes') accounted_yes_no,
+            xxmssl_ap_aging_dataset_dist.get_accounted_date(invoice_id) accounted_date,
+            xxmssl_ap_aging_dataset_dist.get_prepay_ccid (invoice_id, type) prepay,
+            pay_group_lookup_code,NULL format,
+            NULL BUCKET1,NULL S1,NULL T1,NULL BUCKET2,NULL S2,NULL T2,
+            NULL BUCKET3,NULL S3,NULL T3,NULL BUCKET4,NULL S4,NULL T4,
+            NULL BUCKET5,NULL S5,NULL T5,NULL BUCKET6,NULL S6,NULL T6,
+            xxmssl_ap_aging_dataset_dist.get_pay_hold_name(invoice_id) pay_hold_name,
+            xxmssl_ap_aging_dataset_dist.get_pay_hold_reason(invoice_id) pay_hold_reason,
+            xxmssl_ap_aging_dataset_dist.get_pay_hold_amout(invoice_id) pay_hold_amout,
+            p_as_on_date as_on_date, set_of_books_id, vendor_id,
+            attribute1,vendor_site_id,attribute15,invoice_amount,payment_status_flag,
+            dist_amount, p_request_id request_id
+            FROM
+            ( SELECT invoice_type_col,unit,party_id,party_name,site_name,site_purpose,invoice_id,org_id,
+                          supplier_inv_no,curr,voucher_date,voucher_no,type,inv_type,inv_date,exchange_rate,
+                          SUM(amount) dist_amount,
+                          (CASE WHEN curr <> 'INR' THEN SUM(NVL(amount,0)) ELSE 0 END) inv_amt_forex,
+                          (CASE WHEN curr = 'INR' THEN SUM(NVL(amount,0)) ELSE SUM(NVL(amount,0)) * NVL(exchange_rate,1) END) inv_amt_base,
+                          credit_term,code_combination,approval_status,pay_group_lookup_code,vendor_id,
+                          attribute1,vendor_site_id,attribute15,invoice_amount,
+                          payment_status_flag,set_of_books_id 
+                    FROM(
+                    SELECT 'UnApplied' invoice_type_col, hr.NAME unit,aps.segment1 party_id, hp.party_name,
+                             apss.vendor_site_code site_name, NVL(party.attribute7,'NULL') site_purpose, 
+                             api.invoice_id, api.org_id, api.invoice_num supplier_inv_no, api.invoice_currency_code curr, api.creation_date voucher_date,
+                             fds.NAME || '-' || NVL (TO_CHAR (api.doc_sequence_value), api.voucher_num) voucher_no,
+                             api.invoice_type_lookup_code TYPE,
+                             DECODE (api.invoice_type_lookup_code,'PREPAYMENT', DECODE (api.earliest_settlement_date,'', 'PERMANENT PREPAYMENT','TEMPORARY PREPAYMENT'),
+                             api.invoice_type_lookup_code) inv_type,
+                             api.invoice_date inv_date,
+                             NVL (api.exchange_rate, 1) exchange_rate,
+                             dist.amount, 
+                             apt.NAME credit_term,
+                             gcc.concatenated_segments code_combination,
+                             api.wfapproval_status approval_status,
+                             api.pay_group_lookup_code, 
+                             api.vendor_id,hp.attribute1,apss.vendor_site_id,api.attribute15,api.invoice_amount,api.payment_status_flag,
+                             api.set_of_books_id
+                        FROM ap_invoices_all api,
+                             (SELECT amount, accounting_date gl_date, invoice_id
+                                         FROM apps.ap_invoice_distributions_all aida
+                                        WHERE 1=1  and LINE_TYPE_LOOKUP_CODE <> 'PREPAY'
+                                        and TRUNC (aida.accounting_date) <= TRUNC (p_as_on_date)) dist, 
+                             hz_parties hp,
+                             gl_code_combinations_kfv gcc,
+                             ap_suppliers aps,
+                             ap_supplier_sites_all apss,
+                             hr_operating_units hr,
+                             fnd_document_sequences fds,
+                             fnd_doc_sequence_categories fdsc,
+                             ap_terms_tl apt,
+                             (SELECT DISTINCT attribute7, party_site_id FROM hz_party_sites hps) party--,
+                       WHERE 1 = 1
+                         AND dist.invoice_id = api.invoice_id
+                         AND hp.party_id = aps.party_id
+                         AND gcc.code_combination_id = api.accts_pay_code_combination_id
+                         AND apss.party_site_id = party.party_site_id(+)
+                         AND aps.vendor_id = apss.vendor_id
+                         AND hr.organization_id = apss.org_id
+                         AND hr.organization_id = api.org_id
+                         AND api.vendor_site_id = apss.vendor_site_id
+                         AND apt.term_id = api.terms_id
+                         AND api.doc_sequence_id = fds.doc_sequence_id(+)
+                         AND fdsc.code(+) = api.doc_category_code
+                         AND fdsc.application_id(+) = 200
+                         AND TRUNC (dist.gl_date) <= TRUNC (p_as_on_date)
+                         AND api.set_of_books_id = p_ledger_id
+                         AND hr.organization_id = p_org_id
+                         --and api.invoice_id in (2949179,3391786)
+                            -- and api.vendor_id in (541318)
+             UNION ALL
+                     SELECT 'UnApplied' invoice_type_col, hr.NAME unit, hp.party_number party_id, hp.party_name,
+                                 apss.party_site_name site_name, NVL(apss.attribute7,'NULL') site_purpose,  
+                                 api.invoice_id, api.org_id, api.invoice_num supplier_inv_no, api.invoice_currency_code curr, api.creation_date voucher_date,
+                                 fds.NAME || '-' || NVL (TO_CHAR (api.doc_sequence_value), api.voucher_num) voucher_no,
+                                 api.invoice_type_lookup_code TYPE,
+                                 DECODE (api.invoice_type_lookup_code,'PREPAYMENT', DECODE (api.earliest_settlement_date,'', 'PERMANENT PREPAYMENT','TEMPORARY PREPAYMENT'),
+                                 api.invoice_type_lookup_code) inv_type,
+                                 api.invoice_date inv_date,
+                                 NVL (api.exchange_rate, 1) exchange_rate,
+                                 dist.amount, 
+                                 apt.NAME credit_term,
+                                 gcc.concatenated_segments code_combination,
+                                 api.wfapproval_status approval_status,
+                                 api.pay_group_lookup_code, 
+                                 api.vendor_id,hp.attribute1,api.vendor_site_id,api.attribute15,api.invoice_amount,api.payment_status_flag,
+                                 api.set_of_books_id
+                            FROM ap_invoices_all api,
+                                 (SELECT amount, accounting_date gl_date, invoice_id
+                                             FROM apps.ap_invoice_distributions_all aida
+                                            WHERE 1=1  and LINE_TYPE_LOOKUP_CODE <> 'PREPAY'
+                                            and TRUNC (aida.accounting_date) <= TRUNC (p_as_on_date)) dist, 
+                                 hz_parties hp,
+                                 gl_code_combinations_kfv gcc,
+                                 hz_party_sites apss,
+                                 hr_operating_units hr,
+                                 fnd_document_sequences fds,
+                                 fnd_doc_sequence_categories fdsc,
+                                 ap_terms_tl apt
+                           WHERE 1 = 1
+                             AND dist.invoice_id = api.invoice_id
+                             AND hp.party_id = api.party_id
+                             AND gcc.code_combination_id = api.accts_pay_code_combination_id
+                             AND api.party_site_id = apss.party_site_id(+)
+                             AND hr.organization_id = api.org_id
+                             AND apt.term_id = api.terms_id
+                             AND api.doc_sequence_id = fds.doc_sequence_id(+)
+                             AND fdsc.code(+) = api.doc_category_code
+                             AND fdsc.application_id(+) = 200
+                             AND api.invoice_type_lookup_code = 'PAYMENT REQUEST'               
+                             AND TRUNC (dist.gl_date) <= TRUNC (p_as_on_date)
+                             AND api.set_of_books_id = p_ledger_id
+                             AND hr.organization_id = p_org_id
+                             --and api.invoice_id in (2949179,3391786)
+                            -- and api.vendor_id in (541318)
+                         )
+                GROUP BY 
+                        invoice_type_col,unit,party_id,party_name,site_name,site_purpose,invoice_id,org_id,supplier_inv_no,curr,
+                        voucher_date,voucher_no,type,inv_type,inv_date,exchange_rate,credit_term,code_combination,
+                        approval_status,pay_group_lookup_code,vendor_id,attribute1,vendor_site_id,attribute15,invoice_amount,
+                        payment_status_flag,set_of_books_id
+            ) X  
+                WHERE 1=1 
+                AND xxmssl_ap_aging_dataset_dist.xxmssl_ap_prepays_paid(X.invoice_id,TRUNC (p_as_on_date), curr,X.inv_amt_base,X.inv_amt_forex,TYPE ) <> 0;*/ 
+          
+      --Added by Moaz on 06-Dec-24 to dump data of all columns used in report
+      CURSOR cur_standard (p_ledger_id NUMBER, p_org_id NUMBER, p_as_on_date DATE) 
+      IS     
+           SELECT invoice_type_col,unit,party_id,party_name,
+            xxmssl_gst_info_pkg.xxmssl_gstin_no (org_id,vendor_id,vendor_site_id) vendor_gstin,
+            xxmssl_receipt_no (invoice_id) receipt_num,
+            site_name,site_purpose,invoice_id,org_id,supplier_inv_no,curr,
+            voucher_date,voucher_no,type,inv_type,inv_date,
+            NULL supplier_inv_value,
+            exchange_rate,inv_amt_forex,inv_amt_base,credit_term,
+            NULL due_date,
+            NULL hold_name,
+            NULL hold_reason,
+            NULL hold_amout,
+            NULL boe,
+            code_combination,
+            xxmssl_ap_aging_dataset_dist.get_aprovl_status(invoice_id,invoice_amount,payment_status_flag,type) invoice_status,
+            approval_status,
+            DECODE((ap_invoices_pkg.get_posting_status (invoice_id)),'N', 'No','Y', 'Yes') accounted_yes_no,
+            NULL accounted_date,
+            NULL prepay,
+            pay_group_lookup_code,
+            NULL pay_hold_name,
+            NULL pay_hold_reason,
+            NULL pay_hold_amout,
+            p_as_on_date as_on_date, set_of_books_id, vendor_id,
+            attribute1,vendor_site_id,attribute15,invoice_amount,payment_status_flag,
+            dist_amount
+            FROM
+            ( SELECT invoice_type_col,unit,party_id,party_name,site_name,site_purpose,invoice_id,org_id,
+                          supplier_inv_no,curr,voucher_date,voucher_no,type,inv_type,inv_date,exchange_rate,
+                          SUM(amount) dist_amount,
+                          (CASE WHEN curr <> 'INR' THEN SUM(NVL(amount,0)) ELSE 0 END) inv_amt_forex,
+                          (CASE WHEN curr = 'INR' THEN SUM(NVL(amount,0)) ELSE SUM(NVL(amount,0)) * NVL(exchange_rate,1) END) inv_amt_base,
+                          credit_term,code_combination,approval_status,pay_group_lookup_code,vendor_id,
+                          attribute1,vendor_site_id,attribute15,invoice_amount,
+                          payment_status_flag,set_of_books_id 
+                    FROM(
+                    SELECT 'UnApplied' invoice_type_col, hr.NAME unit,aps.segment1 party_id, hp.party_name,
+                             apss.vendor_site_code site_name, NVL(party.attribute7,'NULL') site_purpose, 
+                             api.invoice_id, api.org_id, api.invoice_num supplier_inv_no, api.invoice_currency_code curr, api.creation_date voucher_date,
+                             fds.NAME || '-' || NVL (TO_CHAR (api.doc_sequence_value), api.voucher_num) voucher_no,
+                             api.invoice_type_lookup_code TYPE,
+                             DECODE (api.invoice_type_lookup_code,'PREPAYMENT', DECODE (api.earliest_settlement_date,'', 'PERMANENT PREPAYMENT','TEMPORARY PREPAYMENT'),
+                             api.invoice_type_lookup_code) inv_type,
+                             api.invoice_date inv_date,
+                             NVL (api.exchange_rate, 1) exchange_rate,
+                             dist.amount, 
+                             apt.NAME credit_term,
+                             gcc.concatenated_segments code_combination,
+                             api.wfapproval_status approval_status,
+                             api.pay_group_lookup_code, 
+                             api.vendor_id,hp.attribute1,apss.vendor_site_id,api.attribute15,api.invoice_amount,api.payment_status_flag,
+                             api.set_of_books_id
+                        FROM ap_invoices_all api,
+                             (SELECT amount, accounting_date gl_date, invoice_id
+                                         FROM apps.ap_invoice_distributions_all aida
+                                        WHERE 1=1  and LINE_TYPE_LOOKUP_CODE <> 'PREPAY'
+                                        and TRUNC (aida.accounting_date) <= TRUNC (p_as_on_date)) dist, 
+                             hz_parties hp,
+                             gl_code_combinations_kfv gcc,
+                             ap_suppliers aps,
+                             ap_supplier_sites_all apss,
+                             hr_operating_units hr,
+                             fnd_document_sequences fds,
+                             fnd_doc_sequence_categories fdsc,
+                             ap_terms_tl apt,
+                             (SELECT DISTINCT attribute7, party_site_id FROM hz_party_sites hps) party--,
+                       WHERE 1 = 1
+                         AND dist.invoice_id = api.invoice_id
+                         AND hp.party_id = aps.party_id
+                         AND gcc.code_combination_id = api.accts_pay_code_combination_id
+                         AND apss.party_site_id = party.party_site_id(+)
+                         AND aps.vendor_id = apss.vendor_id
+                         AND hr.organization_id = apss.org_id
+                         AND hr.organization_id = api.org_id
+                         AND api.vendor_site_id = apss.vendor_site_id
+                         AND apt.term_id = api.terms_id
+                         AND api.doc_sequence_id = fds.doc_sequence_id(+)
+                         AND fdsc.code(+) = api.doc_category_code
+                         AND fdsc.application_id(+) = 200
+                         AND TRUNC (dist.gl_date) <= TRUNC (p_as_on_date)
+                         AND api.set_of_books_id = p_ledger_id
+                         AND hr.organization_id = p_org_id
+                         --and api.invoice_id in (2949179,3391786)
+             UNION ALL
+                     SELECT 'UnApplied' invoice_type_col, hr.NAME unit, hp.party_number party_id, hp.party_name,
+                                 apss.party_site_name site_name, NVL(apss.attribute7,'NULL') site_purpose,  
+                                 api.invoice_id, api.org_id, api.invoice_num supplier_inv_no, api.invoice_currency_code curr, api.creation_date voucher_date,
+                                 fds.NAME || '-' || NVL (TO_CHAR (api.doc_sequence_value), api.voucher_num) voucher_no,
+                                 api.invoice_type_lookup_code TYPE,
+                                 DECODE (api.invoice_type_lookup_code,'PREPAYMENT', DECODE (api.earliest_settlement_date,'', 'PERMANENT PREPAYMENT','TEMPORARY PREPAYMENT'),
+                                 api.invoice_type_lookup_code) inv_type,
+                                 api.invoice_date inv_date,
+                                 NVL (api.exchange_rate, 1) exchange_rate,
+                                 dist.amount, 
+                                 apt.NAME credit_term,
+                                 gcc.concatenated_segments code_combination,
+                                 api.wfapproval_status approval_status,
+                                 api.pay_group_lookup_code, 
+                                 api.vendor_id,hp.attribute1,api.vendor_site_id,api.attribute15,api.invoice_amount,api.payment_status_flag,
+                                 api.set_of_books_id
+                            FROM ap_invoices_all api,
+                                 (SELECT amount, accounting_date gl_date, invoice_id
+                                             FROM apps.ap_invoice_distributions_all aida
+                                            WHERE 1=1  and LINE_TYPE_LOOKUP_CODE <> 'PREPAY'
+                                            and TRUNC (aida.accounting_date) <= TRUNC (p_as_on_date)) dist, 
+                                 hz_parties hp,
+                                 gl_code_combinations_kfv gcc,
+                                 hz_party_sites apss,
+                                 hr_operating_units hr,
+                                 fnd_document_sequences fds,
+                                 fnd_doc_sequence_categories fdsc,
+                                 ap_terms_tl apt
+                           WHERE 1 = 1
+                             AND dist.invoice_id = api.invoice_id
+                             AND hp.party_id = api.party_id
+                             AND gcc.code_combination_id = api.accts_pay_code_combination_id
+                             AND api.party_site_id = apss.party_site_id(+)
+                             AND hr.organization_id = api.org_id
+                             AND apt.term_id = api.terms_id
+                             AND api.doc_sequence_id = fds.doc_sequence_id(+)
+                             AND fdsc.code(+) = api.doc_category_code
+                             AND fdsc.application_id(+) = 200
+                             AND api.invoice_type_lookup_code = 'PAYMENT REQUEST'               
+                             AND TRUNC (dist.gl_date) <= TRUNC (p_as_on_date)
+                             AND api.set_of_books_id = p_ledger_id
+                             AND hr.organization_id = p_org_id
+                             --and api.invoice_id in (2949179,3391786)
+                         )
+                GROUP BY 
+                        invoice_type_col,unit,party_id,party_name,site_name,site_purpose,invoice_id,org_id,supplier_inv_no,curr,
+                        voucher_date,voucher_no,type,inv_type,inv_date,exchange_rate,credit_term,code_combination,
+                        approval_status,pay_group_lookup_code,vendor_id,attribute1,vendor_site_id,attribute15,invoice_amount,
+                        payment_status_flag,set_of_books_id
+            ) X  
+                WHERE 1=1 
+                AND xxmssl_ap_aging_dataset_dist.xxmssl_ap_prepays_paid(X.invoice_id,TRUNC (p_as_on_date), curr,X.inv_amt_base,X.inv_amt_forex,TYPE ) <> 0;      
+
+   
+   TYPE tab_hdr IS TABLE OF cur_standard%ROWTYPE INDEX BY PLS_INTEGER;
+   p_obj_stg_hdr tab_hdr;          
+   idx            PLS_INTEGER;                
+                        
+   v_req_id       NUMBER;   
+   v_as_on_date   DATE;
+      
+   BEGIN
+     v_req_id := fnd_global.conc_request_id;
+     v_as_on_date := NVL(fnd_date.canonical_to_date(p_as_on_date),TRUNC (SYSDATE));
+
+      BEGIN
+           --Comented by Moaz on 06-Dec-24 to dump data of all columns used in report
+          /*DELETE FROM XXMSSL.XXMSSL_AP_AGING_DATA_DIST_H
+                 WHERE as_on_date = v_as_on_date;*/
+          
+          --Added by Moaz on 06-Dec-24 to dump data of all columns used in report           
+          DELETE FROM XXMSSL.XXMSSL_AP_AGING_DIST_H
+                 WHERE as_on_date = v_as_on_date; 
+                          
+          --Comented by Moaz on 06-Dec-24 to dump data of all columns used in report
+          /*DELETE FROM XXMSSL.XXMSSL_AP_AGING_DATA_DIST_T
+                 WHERE as_on_date = v_as_on_date;*/ 
+                 
+          --Added by Moaz on 06-Dec-24 to dump data of all columns used in report
+          DELETE FROM XXMSSL.XXMSSL_AP_AGING_DIST_T
+                 WHERE as_on_date = v_as_on_date;                                 
+      EXCEPTION
+         WHEN OTHERS 
+         THEN
+         fnd_file.put_line (
+            fnd_file.LOG,
+               'Error while deleting data from History and Data table for date -'
+            || v_as_on_date);
+      END;
+      COMMIT;
+         
+         --Comented by Moaz on 06-Dec-24 to dump data of all columns used in report
+        /*FOR i IN cur_ou
+        LOOP
+          OPEN cur_standard(i.set_of_books_id, i.organization_id, v_as_on_date, v_req_id);
+          FETCH cur_standard BULK COLLECT INTO p_obj_stg_hdr;
+          CLOSE cur_standard;
+        
+        FORALL x IN p_obj_stg_hdr.first..p_obj_stg_hdr.last
+        INSERT 
+          INTO XXMSSL.XXMSSL_AP_AGING_DATA_DIST_T 
+        VALUES(p_obj_stg_hdr(x).INVOICE_TYPE_COL  
+               ,p_obj_stg_hdr(x).unit              
+               ,p_obj_stg_hdr(x).PARTY_ID                      
+               ,p_obj_stg_hdr(x).PARTY_NAME                    
+               ,p_obj_stg_hdr(x).VENDOR_GSTIN                  
+               ,p_obj_stg_hdr(x).RECEIPT_NUM                
+               ,p_obj_stg_hdr(x).SITE_NAME            
+               ,p_obj_stg_hdr(x).SITE_PURPOSE               
+               ,p_obj_stg_hdr(x).INVOICE_ID                
+               ,p_obj_stg_hdr(x).ORG_ID                
+               ,p_obj_stg_hdr(x).SUPPLIER_INV_NO
+               ,p_obj_stg_hdr(x).CURR            
+               ,p_obj_stg_hdr(x).VOUCHER_DATE      
+               ,p_obj_stg_hdr(x).VOUCHER_NO                 
+               ,p_obj_stg_hdr(x).TYPE                     
+               ,p_obj_stg_hdr(x).INV_TYPE                  
+               ,p_obj_stg_hdr(x).INV_DATE           
+               ,p_obj_stg_hdr(x).SUPPLIER_INV_VALUE                
+               ,p_obj_stg_hdr(x).EXCHANGE_RATE                
+               ,p_obj_stg_hdr(x).INV_AMT_FOREX                        
+               ,p_obj_stg_hdr(x).INV_AMT_BASE
+               ,p_obj_stg_hdr(x).CREDIT_TERM 
+               ,p_obj_stg_hdr(x).DUE_DATE             
+               ,p_obj_stg_hdr(x).HOLD_NAME                      
+               ,p_obj_stg_hdr(x).HOLD_REASON                    
+               ,p_obj_stg_hdr(x).HOLD_AMOUT                  
+               ,p_obj_stg_hdr(x).BOE             
+               ,p_obj_stg_hdr(x).CODE_COMBINATION           
+               ,p_obj_stg_hdr(x).INVOICE_STATUS              
+               ,p_obj_stg_hdr(x).APPROVAL_STATUS                
+               ,p_obj_stg_hdr(x).ACCOUNTED_YES_NO                
+               ,p_obj_stg_hdr(x).ACCOUNTED_DATE
+               ,p_obj_stg_hdr(x).PREPAY            
+               ,p_obj_stg_hdr(x).PAY_GROUP_LOOKUP_CODE      
+               ,p_obj_stg_hdr(x).FORMAT                 
+               ,p_obj_stg_hdr(x).BUCKET1                    
+               ,p_obj_stg_hdr(x).S1                  
+               ,p_obj_stg_hdr(x).T1           
+               ,p_obj_stg_hdr(x).BUCKET2
+               ,p_obj_stg_hdr(x).S2                  
+               ,p_obj_stg_hdr(x).T2           
+               ,p_obj_stg_hdr(x).BUCKET3
+               ,p_obj_stg_hdr(x).S3                  
+               ,p_obj_stg_hdr(x).T3           
+               ,p_obj_stg_hdr(x).BUCKET4
+               ,p_obj_stg_hdr(x).S4                  
+               ,p_obj_stg_hdr(x).T4           
+               ,p_obj_stg_hdr(x).BUCKET5
+               ,p_obj_stg_hdr(x).S5                  
+               ,p_obj_stg_hdr(x).T5           
+               ,p_obj_stg_hdr(x).BUCKET6 
+               ,p_obj_stg_hdr(x).S6                  
+               ,p_obj_stg_hdr(x).T6             
+               ,p_obj_stg_hdr(x).PAY_HOLD_NAME                
+               ,p_obj_stg_hdr(x).PAY_HOLD_REASON                        
+               ,p_obj_stg_hdr(x).PAY_HOLD_AMOUT
+               ,p_obj_stg_hdr(x).AS_ON_DATE
+               ,p_obj_stg_hdr(x).SET_OF_BOOKS_ID
+               ,p_obj_stg_hdr(x).VENDOR_ID
+               ,p_obj_stg_hdr(x).ATTRIBUTE1
+               ,p_obj_stg_hdr(x).VENDOR_SITE_ID
+               ,p_obj_stg_hdr(x).ATTRIBUTE15
+               ,p_obj_stg_hdr(x).INVOICE_AMOUNT
+               ,p_obj_stg_hdr(x).PAYMENT_STATUS_FLAG 
+               ,p_obj_stg_hdr(x).DIST_AMOUNT
+               ,p_obj_stg_hdr(x).REQUEST_ID
+               );
+          
+        END LOOP;*/
+
+        FOR i IN cur_ou
+        LOOP
+          OPEN cur_standard(i.set_of_books_id, i.organization_id, v_as_on_date);
+          FETCH cur_standard BULK COLLECT INTO p_obj_stg_hdr;
+          CLOSE cur_standard;
+
+          idx := 0;
+          IF p_obj_stg_hdr.COUNT >= 1 THEN 
+              FOR k IN p_obj_stg_hdr.FIRST .. p_obj_stg_hdr.LAST 
+              LOOP
+              idx := idx+1;
+                              p_obj_stg_hdr1(idx).INVOICE_TYPE_COL    := p_obj_stg_hdr(K).INVOICE_TYPE_COL;
+                              p_obj_stg_hdr1(idx).unit                := p_obj_stg_hdr(K).unit;
+                              p_obj_stg_hdr1(idx).PARTY_ID            := p_obj_stg_hdr(K).PARTY_ID;
+                              p_obj_stg_hdr1(idx).PARTY_NAME          := p_obj_stg_hdr(K).PARTY_NAME;
+                              p_obj_stg_hdr1(idx).VENDOR_GSTIN        := p_obj_stg_hdr(K).VENDOR_GSTIN;
+                              p_obj_stg_hdr1(idx).RECEIPT_NUM         := p_obj_stg_hdr(K).RECEIPT_NUM;
+                              p_obj_stg_hdr1(idx).SITE_NAME           := p_obj_stg_hdr(K).SITE_NAME;
+                              p_obj_stg_hdr1(idx).SITE_PURPOSE        := p_obj_stg_hdr(K).SITE_PURPOSE;
+                              p_obj_stg_hdr1(idx).INVOICE_ID          := p_obj_stg_hdr(K).INVOICE_ID;
+                              p_obj_stg_hdr1(idx).ORG_ID              := p_obj_stg_hdr(K).ORG_ID;
+                              p_obj_stg_hdr1(idx).SUPPLIER_INV_NO     := p_obj_stg_hdr(K).SUPPLIER_INV_NO;
+                              p_obj_stg_hdr1(idx).CURR                := p_obj_stg_hdr(K).CURR;
+                              p_obj_stg_hdr1(idx).VOUCHER_DATE        := p_obj_stg_hdr(K).VOUCHER_DATE;
+                              p_obj_stg_hdr1(idx).VOUCHER_NO          := p_obj_stg_hdr(K).VOUCHER_NO;
+                              p_obj_stg_hdr1(idx).TYPE                := p_obj_stg_hdr(K).TYPE;
+                              p_obj_stg_hdr1(idx).INV_TYPE            := p_obj_stg_hdr(K).INV_TYPE;
+                              p_obj_stg_hdr1(idx).INV_DATE            := p_obj_stg_hdr(K).INV_DATE;
+                              p_obj_stg_hdr1(idx).SUPPLIER_INV_VALUE  := TO_NUMBER (NVL(TRIM(p_obj_stg_hdr(K).ATTRIBUTE15),0));
+                              p_obj_stg_hdr1(idx).EXCHANGE_RATE       := p_obj_stg_hdr(K).EXCHANGE_RATE;
+                              p_obj_stg_hdr1(idx).INV_AMT_FOREX       := p_obj_stg_hdr(K).INV_AMT_FOREX;
+                              p_obj_stg_hdr1(idx).INV_AMT_BASE        := p_obj_stg_hdr(K).INV_AMT_BASE;
+                              p_obj_stg_hdr1(idx).CREDIT_TERM         := p_obj_stg_hdr(K).CREDIT_TERM;
+                              p_obj_stg_hdr1(idx).DUE_DATE            := xxmssl_ap_aging_dataset_dist.get_due_date (p_obj_stg_hdr(K).invoice_id, p_obj_stg_hdr(K).org_id);
+                              p_obj_stg_hdr1(idx).HOLD_NAME           := xxmssl_ap_aging_dataset_dist.get_hold_name(p_obj_stg_hdr(K).invoice_id);
+                              p_obj_stg_hdr1(idx).HOLD_REASON         := xxmssl_ap_aging_dataset_dist.get_hold_reason(p_obj_stg_hdr(K).invoice_id);
+                              p_obj_stg_hdr1(idx).HOLD_AMOUT          := xxmssl_ap_aging_dataset_dist.get_hold_amout(p_obj_stg_hdr(K).invoice_id);
+                              p_obj_stg_hdr1(idx).BOE                 := xxmssl_ap_aging_dataset_dist.cf_boe(p_obj_stg_hdr(K).invoice_id);
+                              p_obj_stg_hdr1(idx).CODE_COMBINATION    := p_obj_stg_hdr(K).CODE_COMBINATION;
+                              p_obj_stg_hdr1(idx).INVOICE_STATUS      := p_obj_stg_hdr(K).INVOICE_STATUS;
+                              p_obj_stg_hdr1(idx).APPROVAL_STATUS     := p_obj_stg_hdr(K).APPROVAL_STATUS;
+                              p_obj_stg_hdr1(idx).ACCOUNTED_YES_NO    := p_obj_stg_hdr(K).ACCOUNTED_YES_NO;
+                              p_obj_stg_hdr1(idx).ACCOUNTED_DATE      := xxmssl_ap_aging_dataset_dist.get_accounted_date(p_obj_stg_hdr(K).invoice_id);
+                              p_obj_stg_hdr1(idx).PREPAY              := xxmssl_ap_aging_dataset_dist.get_prepay_ccid(p_obj_stg_hdr(K).invoice_id, p_obj_stg_hdr(K).type);
+                              p_obj_stg_hdr1(idx).PAY_GROUP_LOOKUP_CODE:= p_obj_stg_hdr(K).PAY_GROUP_LOOKUP_CODE;
+                              p_obj_stg_hdr1(idx).PAY_HOLD_NAME       := xxmssl_ap_aging_dataset_dist.get_pay_hold_name(p_obj_stg_hdr(K).invoice_id);
+                              p_obj_stg_hdr1(idx).PAY_HOLD_REASON     := xxmssl_ap_aging_dataset_dist.get_pay_hold_reason(p_obj_stg_hdr(K).invoice_id);
+                              p_obj_stg_hdr1(idx).PAY_HOLD_AMOUT      := xxmssl_ap_aging_dataset_dist.get_pay_hold_amout(p_obj_stg_hdr(K).invoice_id);
+                              p_obj_stg_hdr1(idx).AS_ON_DATE          := p_obj_stg_hdr(K).AS_ON_DATE;
+                              p_obj_stg_hdr1(idx).SET_OF_BOOKS_ID     := p_obj_stg_hdr(K).SET_OF_BOOKS_ID;
+                              p_obj_stg_hdr1(idx).VENDOR_ID           := p_obj_stg_hdr(K).VENDOR_ID;
+                              p_obj_stg_hdr1(idx).ATTRIBUTE1          := p_obj_stg_hdr(K).ATTRIBUTE1;
+                              p_obj_stg_hdr1(idx).VENDOR_SITE_ID      := p_obj_stg_hdr(K).VENDOR_SITE_ID;
+                              p_obj_stg_hdr1(idx).ATTRIBUTE15         := p_obj_stg_hdr(K).ATTRIBUTE15;
+                              p_obj_stg_hdr1(idx).INVOICE_AMOUNT      := p_obj_stg_hdr(K).INVOICE_AMOUNT;
+                              p_obj_stg_hdr1(idx).PAYMENT_STATUS_FLAG := p_obj_stg_hdr(K).PAYMENT_STATUS_FLAG;
+                              p_obj_stg_hdr1(idx).DIST_AMOUNT         := p_obj_stg_hdr(K).DIST_AMOUNT;
+                              p_obj_stg_hdr1(idx).PO_NO               := substr(xxmssl_ap_aging_dataset_dist.cf_po_no(p_obj_stg_hdr(K).invoice_id, p_obj_stg_hdr(K).type),0);
+                              p_obj_stg_hdr1(idx).CF_INV_AMT_FOREX    := xxmssl_ap_aging_dataset_dist.cf_inv_amt_forex(p_obj_stg_hdr(K).inv_amt_forex,p_obj_stg_hdr(K).type,
+                                                                                                                       p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date);
+                              p_obj_stg_hdr1(idx).BAL_AMT_FOREX       := xxmssl_ap_aging_dataset_dist.cf_bal_amt_forex(p_obj_stg_hdr(K).inv_amt_forex,p_obj_stg_hdr(K).type,
+                                                                                                                       p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date);
+                              p_obj_stg_hdr1(idx).CF_INV_AMT_BASE     := xxmssl_ap_aging_dataset_dist.cf_inv_amt_base( p_obj_stg_hdr(K).type,p_obj_stg_hdr(K).curr,
+                                                                                                                       p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                       p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date);                                                                                         
+                              p_obj_stg_hdr1(idx).BAL_AMT_BASE        := xxmssl_ap_aging_dataset_dist.cf_bal_amt_inr(  p_obj_stg_hdr(K).inv_amt_forex,p_obj_stg_hdr(K).org_id,
+                                                                                                                       p_obj_stg_hdr(K).type,p_obj_stg_hdr(K).invoice_id,
+                                                                                                                       p_obj_stg_hdr(K).as_on_date,p_obj_stg_hdr(K).curr,
+                                                                                                                       p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                       p_obj_stg_hdr(K).exchange_rate);                                                                                         
+                              p_obj_stg_hdr1(idx).CF_DUE_DAYS         := xxmssl_ap_aging_dataset_dist.cf_due_days(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).invoice_id, 
+                                                                                                                  p_obj_stg_hdr(K).as_on_date);   
+                              p_obj_stg_hdr1(idx).CF_UNPAID           := xxmssl_ap_aging_dataset_dist.cf_unpaid(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).inv_amt_forex,
+                                                                                                                p_obj_stg_hdr(K).org_id,p_obj_stg_hdr(K).type,
+                                                                                                                p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date,
+                                                                                                                p_obj_stg_hdr(K).curr,p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                p_obj_stg_hdr(K).exchange_rate);
+                              p_obj_stg_hdr1(idx).CF_NOT_DUE           := xxmssl_ap_aging_dataset_dist.cf_not_due(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).inv_amt_forex,
+                                                                                                                  p_obj_stg_hdr(K).org_id,p_obj_stg_hdr(K).type,
+                                                                                                                  p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date,
+                                                                                                                  p_obj_stg_hdr(K).curr,p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                  p_obj_stg_hdr(K).exchange_rate);
+                              p_obj_stg_hdr1(idx).P_30D               := xxmssl_ap_aging_dataset_dist.cf_buck1(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).inv_amt_forex,
+                                                                                                                  p_obj_stg_hdr(K).org_id,p_obj_stg_hdr(K).type,
+                                                                                                                  p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date,
+                                                                                                                  p_obj_stg_hdr(K).curr,p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                  p_obj_stg_hdr(K).exchange_rate,0,30);
+                              p_obj_stg_hdr1(idx).P_60D               := xxmssl_ap_aging_dataset_dist.cf_buck2(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).inv_amt_forex,
+                                                                                                                  p_obj_stg_hdr(K).org_id,p_obj_stg_hdr(K).type,
+                                                                                                                  p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date,
+                                                                                                                  p_obj_stg_hdr(K).curr,p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                  p_obj_stg_hdr(K).exchange_rate,31,60);
+                              p_obj_stg_hdr1(idx).P_90D               := xxmssl_ap_aging_dataset_dist.cf_buck3(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).inv_amt_forex,
+                                                                                                                  p_obj_stg_hdr(K).org_id,p_obj_stg_hdr(K).type,
+                                                                                                                  p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date,
+                                                                                                                  p_obj_stg_hdr(K).curr,p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                  p_obj_stg_hdr(K).exchange_rate,61,90);                                                                                    
+                              p_obj_stg_hdr1(idx).P_180D              := xxmssl_ap_aging_dataset_dist.cf_buck4(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).inv_amt_forex,
+                                                                                                                  p_obj_stg_hdr(K).org_id,p_obj_stg_hdr(K).type,
+                                                                                                                  p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date,
+                                                                                                                  p_obj_stg_hdr(K).curr,p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                  p_obj_stg_hdr(K).exchange_rate,91,180);                                                                                    
+                              p_obj_stg_hdr1(idx).P_360D              := xxmssl_ap_aging_dataset_dist.cf_buck5(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).inv_amt_forex,
+                                                                                                                  p_obj_stg_hdr(K).org_id,p_obj_stg_hdr(K).type,
+                                                                                                                  p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date,
+                                                                                                                  p_obj_stg_hdr(K).curr,p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                  p_obj_stg_hdr(K).exchange_rate,181,360);
+                              p_obj_stg_hdr1(idx).P_GT_360D           := xxmssl_ap_aging_dataset_dist.cf_buck6(p_obj_stg_hdr(K).invoice_type_col,p_obj_stg_hdr(K).inv_amt_forex,
+                                                                                                                  p_obj_stg_hdr(K).org_id,p_obj_stg_hdr(K).type,
+                                                                                                                  p_obj_stg_hdr(K).invoice_id,p_obj_stg_hdr(K).as_on_date,
+                                                                                                                  p_obj_stg_hdr(K).curr,p_obj_stg_hdr(K).inv_amt_base,
+                                                                                                                  p_obj_stg_hdr(K).exchange_rate,361,999999999);
+                             p_obj_stg_hdr1(idx).CF_SUPPLIER_CHECK_NUM  := xxmssl_ap_aging_dataset_dist.cf_supplier_check_number(p_obj_stg_hdr(K).invoice_id, 
+                                                                                                                                 p_obj_stg_hdr(K).as_on_date);
+                             p_obj_stg_hdr1(idx).CF_SUPPLIER_CHECK_DATE := xxmssl_ap_aging_dataset_dist.cf_supplier_check_date(p_obj_stg_hdr(K).invoice_id, 
+                                                                                                                               p_obj_stg_hdr(K).as_on_date);
+                             p_obj_stg_hdr1(idx).CF_POSTED_YN         := xxmssl_ap_aging_dataset_dist.cf_posted_yn(p_obj_stg_hdr(K).accounted_yes_no,p_obj_stg_hdr(K).invoice_id);                                                                                     
+                             p_obj_stg_hdr1(idx).CF_PAY_GROUP         := xxmssl_ap_aging_dataset_dist.cf_pay_group(p_obj_stg_hdr(K).pay_group_lookup_code);
+                             p_obj_stg_hdr1(idx).REQUEST_ID           := v_req_id;
+              END LOOP;
+                  
+              FORALL x IN p_obj_stg_hdr.FIRST .. p_obj_stg_hdr.LAST
+                 INSERT INTO XXMSSL.XXMSSL_AP_AGING_DIST_T --XXMSSL_AP_AGING_ALERT_DATA_T
+                      VALUES (p_obj_stg_hdr1 (x).INVOICE_TYPE_COL,
+                              p_obj_stg_hdr1 (x).unit,
+                              p_obj_stg_hdr1 (x).PARTY_ID,
+                              p_obj_stg_hdr1 (x).PARTY_NAME,
+                              p_obj_stg_hdr1 (x).VENDOR_GSTIN,
+                              p_obj_stg_hdr1 (x).RECEIPT_NUM,
+                              p_obj_stg_hdr1 (x).SITE_NAME,
+                              p_obj_stg_hdr1 (x).SITE_PURPOSE,
+                              p_obj_stg_hdr1 (x).INVOICE_ID,
+                              p_obj_stg_hdr1 (x).ORG_ID,
+                              p_obj_stg_hdr1 (x).SUPPLIER_INV_NO,
+                              p_obj_stg_hdr1 (x).CURR,
+                              p_obj_stg_hdr1 (x).VOUCHER_DATE,
+                              p_obj_stg_hdr1 (x).VOUCHER_NO,
+                              p_obj_stg_hdr1 (x).TYPE,
+                              p_obj_stg_hdr1 (x).INV_TYPE,
+                              p_obj_stg_hdr1 (x).INV_DATE,
+                              p_obj_stg_hdr1 (x).SUPPLIER_INV_VALUE,
+                              p_obj_stg_hdr1 (x).EXCHANGE_RATE,
+                              p_obj_stg_hdr1 (x).INV_AMT_FOREX,
+                              p_obj_stg_hdr1 (x).INV_AMT_BASE,
+                              p_obj_stg_hdr1 (x).CREDIT_TERM,
+                              p_obj_stg_hdr1 (x).DUE_DATE,
+                              p_obj_stg_hdr1 (x).HOLD_NAME,
+                              p_obj_stg_hdr1 (x).HOLD_REASON,
+                              p_obj_stg_hdr1 (x).HOLD_AMOUT,
+                              p_obj_stg_hdr1 (x).BOE,
+                              p_obj_stg_hdr1 (x).CODE_COMBINATION,
+                              p_obj_stg_hdr1 (x).INVOICE_STATUS,
+                              p_obj_stg_hdr1 (x).APPROVAL_STATUS,
+                              p_obj_stg_hdr1 (x).ACCOUNTED_YES_NO,
+                              p_obj_stg_hdr1 (x).ACCOUNTED_DATE,
+                              p_obj_stg_hdr1 (x).PREPAY,
+                              p_obj_stg_hdr1 (x).PAY_GROUP_LOOKUP_CODE,
+                              p_obj_stg_hdr1 (x).PAY_HOLD_NAME,
+                              p_obj_stg_hdr1 (x).PAY_HOLD_REASON,
+                              p_obj_stg_hdr1 (x).PAY_HOLD_AMOUT,
+                              p_obj_stg_hdr1 (x).AS_ON_DATE,
+                              p_obj_stg_hdr1 (x).SET_OF_BOOKS_ID,
+                              p_obj_stg_hdr1 (x).VENDOR_ID,
+                              p_obj_stg_hdr1 (x).ATTRIBUTE1,
+                              p_obj_stg_hdr1 (x).VENDOR_SITE_ID,
+                              p_obj_stg_hdr1 (x).ATTRIBUTE15,
+                              p_obj_stg_hdr1 (x).INVOICE_AMOUNT,
+                              p_obj_stg_hdr1 (x).PAYMENT_STATUS_FLAG,
+                              p_obj_stg_hdr1 (x).DIST_AMOUNT,
+                              p_obj_stg_hdr1 (x).PO_NO,
+                              p_obj_stg_hdr1 (x).CF_INV_AMT_FOREX,
+                              p_obj_stg_hdr1 (x).BAL_AMT_FOREX,
+                              p_obj_stg_hdr1 (x).CF_INV_AMT_BASE,
+                              p_obj_stg_hdr1 (x).BAL_AMT_BASE,
+                              p_obj_stg_hdr1 (x).CF_DUE_DAYS,
+                              p_obj_stg_hdr1 (x).CF_UNPAID,
+                              p_obj_stg_hdr1 (x).CF_NOT_DUE,
+                              p_obj_stg_hdr1 (x).P_30D,
+                              p_obj_stg_hdr1 (x).P_60D,
+                              p_obj_stg_hdr1 (x).P_90D,
+                              p_obj_stg_hdr1 (x).P_180D,
+                              p_obj_stg_hdr1 (x).P_360D,
+                              p_obj_stg_hdr1 (x).P_GT_360D,
+                              p_obj_stg_hdr1 (x).CF_SUPPLIER_CHECK_NUM,
+                              p_obj_stg_hdr1 (x).CF_SUPPLIER_CHECK_DATE,
+                              p_obj_stg_hdr1 (x).CF_POSTED_YN,
+                              p_obj_stg_hdr1 (x).CF_PAY_GROUP,
+                              p_obj_stg_hdr1 (x).REQUEST_ID                                  
+                              );
+          END IF;
+        p_obj_stg_hdr.DELETE;
+        p_obj_stg_hdr1.DELETE; 
+        END LOOP; 
+               
+        --Comented by Moaz on 06-Dec-24 to dump data of all columns used in report
+        /*INSERT INTO XXMSSL.XXMSSL_AP_AGING_DATA_DIST_H
+            VALUES (TRUNC (SYSDATE), v_as_on_date, 'DIST_DATA',v_req_id);
+        COMMIT;*/          
+        --Added by Moaz on 06-Dec-24 to dump data of all columns used in report
+        INSERT INTO XXMSSL.XXMSSL_AP_AGING_DIST_H
+            VALUES (TRUNC (SYSDATE), v_as_on_date, 'DIST_DATA',v_req_id);
+        COMMIT;        
+        
+        BEGIN
+        DELETE FROM XXMSSL.XXMSSL_AP_AGING_DIST_T
+              WHERE     invoice_status IN ('NEVER VALIDATED', 'NEVER APPROVED')
+                    AND as_on_date = v_as_on_date;
+        COMMIT;
+        EXCEPTION
+        WHEN OTHERS
+        THEN
+          fnd_file.put_line (
+             fnd_file.LOG,
+                'Error while deleting invoice status Never Validated from Alert table for date -'
+             || v_as_on_date);
+        END;         
+        COMMIT;
+   EXCEPTION
+      WHEN OTHERS
+      THEN
+         ROLLBACK;
+         fnd_file.put_line (
+            fnd_file.LOG,
+               'Error when inserting data into XXMSSL_AP_AGING_DIST_T - '
+            || SQLERRM); 
+   END;
+END;
+/
+
