@@ -1,0 +1,16 @@
+# Oracle Apps Custom Report: [PARTIALLY_ACCOUNTED_PO_OUTPUT]
+
+## 📄 Overview
+
+This Folder contains a custom report developed for Oracle E-Business Suite (EBS). The report was designed to meet specific business requirements not covered by standard Oracle reports.
+
+## 🛠️ Features
+
+- Custom SQL query for tailored data extraction for the partially accounted PO
+- Registered as a concurrent program in Oracle EBS
+- Formatted output using XML Publisher / RDF .
+- Parameters for flexible data filtering(TO DATE AND FROM DATE)
+- Complies with organizational data and security standards
+
+## 📁 Project Structure
+
