@@ -14,3 +14,27 @@ This Folder contains a custom report developed for Oracle E-Business Suite (EBS)
 
 ## 📁 Project Structure
 
+
+
+
+## 🚀 How to Deploy
+
+1. Upload the report file (RDF/XML) to the Oracle Apps server
+2. Register the executable and concurrent program in Oracle EBS
+3. Assign to the appropriate responsibility
+4. Run from the Concurrent Requests window
+
+> Note: Detailed steps can be found in the `/docs/deployment_guide.md`
+
+## 📌 Prerequisites
+
+- Oracle EBS R12 or higher
+- Access to System Administrator and Application Developer responsibilities
+- FTP or server access to deploy files
+
+## 🧾 License
+
+This project is proprietary and confidential. Usage is restricted to authorized personnel only.
+
+
+
