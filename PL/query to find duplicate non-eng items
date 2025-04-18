@@ -1,0 +1,50 @@
+/* Formatted on 18/04/2025 12:42:32 (QP5 v5.391) */
+SELECT a.segment1, b.description, pla.segment1 AS po_no, pla.organization_code
+  FROM mtl_system_items_b   a,
+       (SELECT pla.item_id, pha.segment1,orgs.organization_code
+          FROM po_lines_all                  pla,
+               po_headers_all                pha,
+               --ap_invoice_distributions_all  aida,
+               --po_distributions_all          pda,
+             --  ap_invoices_all               aia,
+               xxmssl_demerger_creditor_lkp_v  uni,
+               org_organization_definitions  orgs
+         WHERE     pha.po_header_id = pla.po_header_id
+               AND pha.closed_code = 'OPEN'
+             --  AND pda.po_header_id = pha.po_header_id
+             --  AND pda.po_distribution_id = aida.po_distribution_id
+             --  AND aida.invoice_id = aia.invoice_id
+             --  AND aia.payment_status_flag IN ('N', 'P')
+               AND uni.LOOKUP_CODE=pha.org_id
+              -- AND uni.DESCRIPTION='DWH'
+               AND orgs.operating_unit=pha.ORG_ID
+               group by pla.item_id, pha.segment1,orgs.organization_code) pla,
+       (  SELECT msib.description description, COUNT (msib.segment1)
+            FROM mtl_system_items_b msib,
+                 mtl_item_categories mic,
+                 mtl_categories     mc
+           WHERE     msib.inventory_item_id = mic.inventory_item_id
+                 AND msib.organization_id = mic.organization_id
+                 AND mic.category_id = mc.category_id
+                 AND msib.organization_id = 150
+                 AND mc.segment1 IN ('SERV',
+                                     'CAPX',
+                                     'EXPN',
+                                     'SPAR')
+                 AND msib.inventory_item_status_code = 'Active'
+        GROUP BY msib.description
+          HAVING COUNT (msib.segment1) > 1) b,
+       mtl_item_categories  mic,
+       mtl_categories       mc
+ WHERE    upper (a.description) = upper(b.description)
+       AND a.inventory_item_id = mic.inventory_item_id
+       AND a.organization_id = mic.organization_id
+       AND mic.category_id = mc.category_id
+       AND a.inventory_item_status_code = 'Active'
+       AND mc.segment1 IN ('SERV',
+                           'CAPX',
+                           'EXPN',
+                           'SPAR')
+       AND a.organization_id = 150
+       AND pla.item_id(+) = a.inventory_item_id
+-- AND inv.inventory_item_id(+)=a.inventory_item_id
