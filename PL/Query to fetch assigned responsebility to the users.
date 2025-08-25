@@ -1,0 +1,13 @@
+SELECT
+    fu.USER_NAME,
+    frv.RESPONSIBILITY_NAME,
+    frv.APPLICATION_ID,
+    frv.RESPONSIBILITY_ID
+FROM
+    FND_USER_RESP_GROUPS_ALL furga,
+    FND_USER fu,
+    FND_RESPONSIBILITY_VL frv
+WHERE
+    furga.USER_ID = fu.USER_ID
+    AND furga.RESPONSIBILITY_ID = frv.RESPONSIBILITY_ID
+    AND fu.USER_NAME = '&Enter_User_Name'; -- Replace with the desired username
