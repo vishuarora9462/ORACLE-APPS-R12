@@ -1,0 +1,126 @@
+DECLARE
+   l_return_status      VARCHAR2(1);
+   l_msg_count          NUMBER;
+   l_msg_data           VARCHAR2(1000);
+   l_msg_index_out      NUMBER;
+
+   p_api_version_number NUMBER := 1.0;
+
+   l_header_rec OE_ORDER_PUB.Header_Rec_Type;
+   l_line_tbl   OE_ORDER_PUB.Line_Tbl_Type;
+   l_action_request_tbl OE_ORDER_PUB.Request_Tbl_Type;
+
+   x_header_rec         OE_ORDER_PUB.Header_Rec_Type;
+   x_header_val_rec     OE_ORDER_PUB.Header_Val_Rec_Type;
+   x_Header_Adj_tbl     OE_ORDER_PUB.Header_Adj_Tbl_Type;
+   x_Header_Adj_val_tbl OE_ORDER_PUB.Header_Adj_Val_Tbl_Type;
+   x_Header_price_Att_tbl OE_ORDER_PUB.Header_Price_Att_Tbl_Type;
+   x_Header_Adj_Att_tbl OE_ORDER_PUB.Header_Adj_Att_Tbl_Type;
+   x_Header_Adj_Assoc_tbl OE_ORDER_PUB.Header_Adj_Assoc_Tbl_Type;
+   x_Header_Scredit_tbl OE_ORDER_PUB.Header_Scredit_Tbl_Type;
+   x_Header_Scredit_val_tbl OE_ORDER_PUB.Header_Scredit_Val_Tbl_Type;
+
+   x_line_tbl           OE_ORDER_PUB.Line_Tbl_Type;
+   x_line_val_tbl       OE_ORDER_PUB.Line_Val_Tbl_Type;
+   x_Line_Adj_tbl       OE_ORDER_PUB.Line_Adj_Tbl_Type;
+   x_Line_Adj_val_tbl   OE_ORDER_PUB.Line_Adj_Val_Tbl_Type;
+   x_Line_price_Att_tbl OE_ORDER_PUB.Line_Price_Att_Tbl_Type;
+   x_Line_Adj_Att_tbl   OE_ORDER_PUB.Line_Adj_Att_Tbl_Type;
+   x_Line_Adj_Assoc_tbl OE_ORDER_PUB.Line_Adj_Assoc_Tbl_Type;
+   x_Line_Scredit_tbl   OE_ORDER_PUB.Line_Scredit_Tbl_Type;
+   x_Line_Scredit_val_tbl OE_ORDER_PUB.Line_Scredit_Val_Tbl_Type;
+   x_Lot_Serial_tbl     OE_ORDER_PUB.Lot_Serial_Tbl_Type;
+   x_Lot_Serial_val_tbl OE_ORDER_PUB.Lot_Serial_Val_Tbl_Type;
+   x_action_request_tbl OE_ORDER_PUB.Request_Tbl_Type;
+
+   l_line_tbl_index NUMBER;
+BEGIN
+   -- Initialize environment
+   FND_GLOBAL.APPS_INITIALIZE(22333,34432,660); -- user_id, resp_id, app_id
+   MO_GLOBAL.INIT('ONT');
+   MO_GLOBAL.SET_POLICY_CONTEXT('S', 204);
+
+   oe_msg_pub.initialize;
+   oe_debug_pub.initialize;
+   oe_debug_pub.SetDebugLevel(5);
+
+   -- Header Record
+   l_header_rec := OE_ORDER_PUB.G_MISS_HEADER_REC;
+   l_header_rec.operation               := OE_GLOBALS.G_OPR_CREATE;
+   l_header_rec.TRANSACTIONAL_CURR_CODE := 'INR';
+   l_header_rec.pricing_date            := SYSDATE;
+   l_header_rec.sold_to_org_id          := 2342;
+   l_header_rec.price_list_id           := 9321;
+   l_header_rec.ordered_date            := SYSDATE;
+   l_header_rec.sold_from_org_id        := 101;
+   l_header_rec.salesrep_id             := 340011;
+   l_header_rec.order_type_id           := 2347;
+
+   -- Line Record
+   l_line_tbl_index := 1;
+   l_line_tbl(l_line_tbl_index) := OE_ORDER_PUB.G_MISS_LINE_REC;
+   l_line_tbl(l_line_tbl_index).operation         := OE_GLOBALS.G_OPR_CREATE;
+   l_line_tbl(l_line_tbl_index).ordered_quantity  := 5;
+   l_line_tbl(l_line_tbl_index).ship_from_org_id  := 203;
+   l_line_tbl(l_line_tbl_index).inventory_item_id := 190808;
+
+   -- Call API
+   OE_ORDER_PUB.PROCESS_ORDER (
+      p_api_version_number => p_api_version_number,
+      p_init_msg_list      => fnd_api.g_false,
+      p_return_values      => fnd_api.g_false,
+      p_action_commit      => fnd_api.g_false,
+      x_return_status      => l_return_status,
+      x_msg_count          => l_msg_count,
+      x_msg_data           => l_msg_data,
+      p_header_rec         => l_header_rec,
+      p_line_tbl           => l_line_tbl,
+      p_action_request_tbl => l_action_request_tbl,
+      x_header_rec         => x_header_rec,
+      x_header_val_rec     => x_header_val_rec,
+      x_Header_Adj_tbl     => x_Header_Adj_tbl,
+      x_Header_Adj_val_tbl => x_Header_Adj_val_tbl,
+      x_Header_price_Att_tbl => x_Header_price_Att_tbl,
+      x_Header_Adj_Att_tbl => x_Header_Adj_Att_tbl,
+      x_Header_Adj_Assoc_tbl => x_Header_Adj_Assoc_tbl,
+      x_Header_Scredit_tbl   => x_Header_Scredit_tbl,
+      x_Header_Scredit_val_tbl => x_Header_Scredit_val_tbl,
+      x_line_tbl           => x_line_tbl,
+      x_line_val_tbl       => x_line_val_tbl,
+      x_Line_Adj_tbl       => x_Line_Adj_tbl,
+      x_Line_Adj_val_tbl   => x_Line_Adj_val_tbl,
+      x_Line_price_Att_tbl => x_Line_price_Att_tbl,
+      x_Line_Adj_Att_tbl   => x_Line_Adj_Att_tbl,
+      x_Line_Adj_Assoc_tbl => x_Line_Adj_Assoc_tbl,
+      x_Line_Scredit_tbl   => x_Line_Scredit_tbl,
+      x_Line_Scredit_val_tbl => x_Line_Scredit_val_tbl,
+      x_Lot_Serial_tbl     => x_Lot_Serial_tbl,
+      x_Lot_Serial_val_tbl => x_Lot_Serial_val_tbl,
+      x_action_request_tbl => x_action_request_tbl
+   );
+
+   -- Print results
+   dbms_output.put_line('Order Header_ID : ' || x_header_rec.header_id);
+
+   FOR i IN 1 .. l_msg_count LOOP
+      Oe_Msg_Pub.get(
+         p_msg_index     => i,
+         p_encoded       => Fnd_Api.G_FALSE,
+         p_data          => l_msg_data,
+         p_msg_index_out => l_msg_index_out
+      );
+      DBMS_OUTPUT.PUT_LINE('Message: ' || l_msg_data);
+   END LOOP;
+
+   IF l_return_status = FND_API.G_RET_STS_SUCCESS THEN
+      dbms_output.put_line('Order Created Successfully');
+   ELSE
+      dbms_output.put_line('Order Creation Failed');
+   END IF;
+
+EXCEPTION
+   WHEN OTHERS THEN
+      dbms_output.put_line('Error: ' || SQLERRM);
+END;
+/
+--COMMIT;
